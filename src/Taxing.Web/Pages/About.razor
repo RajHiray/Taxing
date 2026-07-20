@@ -1,0 +1,61 @@
+@page "/about"
+
+<PageTitle>About &amp; Disclaimer — Taxing</PageTitle>
+
+<h1>About &amp; Disclaimer</h1>
+
+<div class="alert alert-warning">
+    <strong>Not tax advice.</strong> Taxing is a calculation aid. It does not constitute
+    professional tax, legal or financial advice. Always verify every figure and consult a
+    qualified Chartered Accountant before filing your return.
+</div>
+
+<h2>What it does</h2>
+<p>
+    Taxing helps a salaried resident of India (for example, a Microsoft India employee with
+    Microsoft RSUs that vest into a US brokerage account) prepare the foreign-asset and
+    foreign-income portions of ITR-2 / ITR-3:
+</p>
+<ul>
+    <li><strong>Schedule FA — A2</strong>: foreign custodial (brokerage) account.</li>
+    <li><strong>Schedule FA — A3</strong>: foreign equity &amp; debt interest (the held shares).</li>
+    <li><strong>Schedule FSI</strong>: foreign source income (dividends).</li>
+    <li><strong>Schedule TR</strong> and <strong>Form 67</strong>: relief for foreign tax paid.</li>
+    <li><strong>Schedule CG</strong>: capital gains on share sales (FIFO lot matching).</li>
+</ul>
+
+<h2>Key conventions</h2>
+<ul>
+    <li>
+        <strong>Reporting periods.</strong> Schedule FA uses the calendar year (1 Jan – 31 Dec);
+        income schedules use the financial year (1 Apr – 31 Mar).
+    </li>
+    <li>
+        <strong>Currency conversion.</strong> Income is converted per <strong>Rule 128</strong>
+        using the SBI TT buying rate on the last day of the month preceding the month of
+        accrual. Schedule FA balances are valued at the SBI TTBR on the valuation date, with a
+        preceding-working-day fallback for holidays.
+    </li>
+    <li>
+        <strong>Capital gains.</strong> Foreign/unlisted shares are long-term when held more than
+        24 months. Cost equals the vesting fair-market value (already taxed as a perquisite),
+        preventing double taxation.
+    </li>
+</ul>
+
+<h2>Privacy &amp; security</h2>
+<ul>
+    <li>All parsing and calculation run entirely in your browser (WebAssembly).</li>
+    <li>Your statement is never uploaded to any server and is cleared when you close the tab.</li>
+    <li>Account numbers are masked (all but the last four digits) in every output.</li>
+</ul>
+
+<h2>Limitations</h2>
+<ul>
+    <li>SBI TTBR rates shipped with the app are illustrative samples — supply official rates.</li>
+    <li>
+        Schedule FA peak/closing balances are approximated from securities value plus cash;
+        verify against your broker's own peak-value statement.
+    </li>
+    <li>Provide a 31 December market price per symbol for accurate closing valuations.</li>
+</ul>

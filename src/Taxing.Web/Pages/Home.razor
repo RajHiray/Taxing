@@ -1,7 +1,248 @@
-﻿@page "/"
+@page "/"
+@using System.Text
+@inject HttpClient Http
+@inject IJSRuntime JS
 
-<PageTitle>Home</PageTitle>
+<PageTitle>Taxing — ITR Foreign Asset Calculator</PageTitle>
 
-<h1>Hello, world!</h1>
+<h1>Foreign Asset &amp; Income Calculator</h1>
+<p class="text-muted">
+    Compute ITR Schedule <strong>FA (A2/A3)</strong>, <strong>FSI</strong>, <strong>TR</strong> and
+    <strong>Form 67</strong> from your US broker statement. All processing happens
+    <strong>in your browser</strong>; your statement never leaves your device.
+</p>
 
-Welcome to your new app.
+<div class="alert alert-warning" role="alert">
+    This tool assists with calculations and is <strong>not tax advice</strong>. Verify every
+    figure before filing. See <a href="about">About &amp; Disclaimer</a>.
+</div>
+
+@* ---------------- Step 1: Broker + Assessment Year ---------------- *@
+<div class="card mb-3">
+    <div class="card-header">1. Broker &amp; Assessment Year</div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label">Broker</label>
+                <select class="form-select" @bind="_broker">
+                    @foreach (var p in StatementParserFactory.All)
+                    {
+                        <option value="@p.Broker">@p.DisplayName</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Assessment Year (start)</label>
+                <select class="form-select" @bind="_assessmentYearStart">
+                    @for (var y = DateTime.Now.Year; y >= 2020; y--)
+                    {
+                        <option value="@y">@($"{y}-{(y + 1) % 100:D2}") (FY @($"{y - 1}-{y % 100:D2}"))</option>
+                    }
+                </select>
+            </div>
+        </div>
+    </div>
+</div>
+
+@* ---------------- Step 2: Account metadata ---------------- *@
+<div class="card mb-3">
+    <div class="card-header">2. Account Details (for Schedule FA)</div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label">Institution Name</label>
+                <input class="form-control" @bind="_institutionName" placeholder="e.g. Fidelity" />
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Account Number (masked on output)</label>
+                <input class="form-control" @bind="_accountNumber" placeholder="e.g. Z12345678" />
+            </div>
+            <div class="col-md-12">
+                <label class="form-label">Institution Address</label>
+                <input class="form-control" @bind="_institutionAddress" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Account Opened Date</label>
+                <input type="date" class="form-control" @bind="_accountOpenedDate" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Closing Cash Balance (@_currency, 31 Dec)</label>
+                <input type="number" step="0.01" class="form-control" @bind="_closingCash" />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Currency</label>
+                <input class="form-control" @bind="_currency" />
+            </div>
+        </div>
+    </div>
+</div>
+
+@* ---------------- Step 3: Statement upload ---------------- *@
+<div class="card mb-3">
+    <div class="card-header">3. Upload Broker Statement (CSV)</div>
+    <div class="card-body">
+        <InputFile class="form-control" OnChange="OnFileSelected" accept=".csv" />
+        @if (!string.IsNullOrEmpty(_csvFileName))
+        {
+            <p class="mt-2 mb-0 text-success">Loaded: @_csvFileName (@_csvContent.Length chars)</p>
+        }
+    </div>
+</div>
+
+@* ---------------- Step 4: FX rates & closing prices ---------------- *@
+<div class="card mb-3">
+    <div class="card-header">4. SBI TTBR Rates &amp; Year-end Prices</div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label">
+                    SBI TTBR rates (@_currency) — one <code>date,rate</code> per line
+                </label>
+                <textarea class="form-control font-monospace" rows="8" @bind="_fxText"></textarea>
+                <button class="btn btn-sm btn-outline-secondary mt-2" @onclick="LoadSampleRates">
+                    Load sample rates
+                </button>
+                <small class="d-block text-muted mt-1">
+                    Income uses Rule 128 (rate on last day of the preceding month). Provide month-end
+                    rates. Sample rates are illustrative — replace with official SBI TTBR values.
+                </small>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">
+                    Year-end (31 Dec) prices — one <code>SYMBOL,price</code> per line
+                </label>
+                <textarea class="form-control font-monospace" rows="8" @bind="_closingPricesText"
+                          placeholder="MSFT,375.00"></textarea>
+                <small class="d-block text-muted mt-1">
+                    Used to value Schedule FA closing holdings. If omitted, the last observed price is used.
+                </small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<button class="btn btn-primary btn-lg mb-3" @onclick="Compute" disabled="@(!CanCompute)">
+    Calculate
+</button>
+
+@if (_error is not null)
+{
+    <div class="alert alert-danger">@_error</div>
+}
+
+@if (_result is not null)
+{
+    <ResultsView Result="_result" OnDownloadExcel="DownloadExcel" OnDownloadJson="DownloadJson" />
+}
+
+@code {
+    private Broker _broker = Broker.Fidelity;
+    private int _assessmentYearStart = DateTime.Now.Year;
+
+    private string _institutionName = string.Empty;
+    private string _institutionAddress = string.Empty;
+    private string _accountNumber = string.Empty;
+    private DateTime? _accountOpenedDate;
+    private decimal _closingCash;
+    private string _currency = "USD";
+
+    private string _csvFileName = string.Empty;
+    private string _csvContent = string.Empty;
+
+    private string _fxText = string.Empty;
+    private string _closingPricesText = string.Empty;
+
+    private ItrResult? _result;
+    private string? _error;
+
+    private bool CanCompute => !string.IsNullOrWhiteSpace(_csvContent);
+
+    protected override async Task OnInitializedAsync() => await LoadSampleRates();
+
+    private async Task LoadSampleRates()
+    {
+        try
+        {
+            var csv = await Http.GetStringAsync("data/sbi-ttbr-usd-sample.csv");
+            _fxText = csv.Trim();
+        }
+        catch
+        {
+            // Non-fatal: user can paste rates manually.
+        }
+    }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        _error = null;
+        try
+        {
+            var file = e.File;
+            // Cap at 5 MB to guard against oversized uploads.
+            using var stream = file.OpenReadStream(5 * 1024 * 1024);
+            using var reader = new StreamReader(stream);
+            _csvContent = await reader.ReadToEndAsync();
+            _csvFileName = file.Name;
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not read file: {ex.Message}";
+        }
+    }
+
+    private void Compute()
+    {
+        _error = null;
+        _result = null;
+        try
+        {
+            var meta = new StatementMetadata
+            {
+                InstitutionName = _institutionName,
+                InstitutionAddress = _institutionAddress,
+                AccountNumber = _accountNumber,
+                AccountOpenedDate = _accountOpenedDate is { } d ? DateOnly.FromDateTime(d) : null,
+                ClosingCashBalance = _closingCash,
+                Currency = _currency
+            };
+
+            var statement = StatementParserFactory.For(_broker).Parse(_csvContent, meta);
+            var fx = InputParsers.ParseFxRates(_fxText, _currency);
+            var options = new CalculatorOptions
+            {
+                ClosingPricesForeign = InputParsers.ParseClosingPrices(_closingPricesText)
+            };
+
+            var period = TaxPeriod.FromAssessmentYear(_assessmentYearStart);
+            _result = new ItrCalculator(fx, options).Compute(statement, period);
+
+            if (_result.ScheduleFaA3.Count == 0 && _result.ScheduleFsi.Count == 0)
+                _error = "No foreign holdings or income were found. Check the broker selection and file.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task DownloadExcel()
+    {
+        if (_result is null) return;
+        var bytes = ExcelExporter.ToWorkbook(_result);
+        await JS.InvokeVoidAsync("taxingDownload",
+            $"ITR-Foreign-{_result.Period.AssessmentYearLabel}.xlsx",
+            Convert.ToBase64String(bytes),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+
+    private async Task DownloadJson()
+    {
+        if (_result is null) return;
+        var json = JsonExporter.ToJson(_result);
+        var bytes = Encoding.UTF8.GetBytes(json);
+        await JS.InvokeVoidAsync("taxingDownload",
+            $"ITR-Foreign-{_result.Period.AssessmentYearLabel}.json",
+            Convert.ToBase64String(bytes),
+            "application/json");
+    }
+}
