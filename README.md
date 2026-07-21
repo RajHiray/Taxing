@@ -58,10 +58,15 @@ Then open the printed `http://localhost:<port>` URL.
 ## Usage
 
 1. Select your **broker** and **assessment year**.
-2. Enter **account details** (for Schedule FA).
-3. Upload the broker **statement CSV** (transaction history export).
-4. Provide **SBI TTBR rates** (a sample set is bundled — replace with official rates) and the
-   **31 December price** per symbol.
+2. Enter **account details** (for Schedule FA) — these come from your **Fidelity December
+   account statement (PDF)** or account profile and are typed in manually (the transaction export
+   does not contain them).
+3. Upload the broker **statement CSV** — Fidelity's **transaction history export** from
+   *Accounts &amp; Trade → Portfolio → Activity &amp; Orders → Download (CSV)*, covering the period
+   you are filing.
+4. Provide **SBI TTBR rates** — the State Bank of India **Telegraphic Transfer Buying Rate**
+   (month-end values, from a public SBI rate source; a sample set is bundled — replace with official
+   rates) and the **31 December price** per symbol.
 5. Click **Calculate**, review the tabbed schedules, and **download** the Excel workbook or JSON.
 
 ## Deployment

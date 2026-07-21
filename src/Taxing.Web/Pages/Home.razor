@@ -48,6 +48,46 @@
 <div class="card mb-3">
     <div class="card-header">2. Account Details (for Schedule FA)</div>
     <div class="card-body">
+        <details class="mb-3">
+            <summary class="text-primary" role="button">Where do I find these on Fidelity?</summary>
+            <div class="mt-2 small text-muted">
+                <p class="mb-1">
+                    These fields are <strong>entered manually</strong>. Fidelity's transaction export
+                    (used in step 3) contains only trades and cash activity — it does <em>not</em>
+                    include the account-holder details below, so there is no file to upload here.
+                    Copy each value from your <strong>Fidelity December account statement (PDF)</strong>
+                    or account profile:
+                </p>
+                <ul class="mb-1">
+                    <li>
+                        <strong>Institution Name</strong> — the custodian shown on your statement
+                        (commonly <em>National Financial Services LLC</em> / Fidelity Brokerage
+                        Services). Use exactly what your statement shows.
+                    </li>
+                    <li>
+                        <strong>Account Number</strong> — the account number on the statement header.
+                        Only the last four characters appear in the output; the rest is masked.
+                    </li>
+                    <li>
+                        <strong>Institution Address</strong> — the custodian's address printed on the
+                        statement.
+                    </li>
+                    <li>
+                        <strong>Account Opened Date</strong> — from your account-opening documents or
+                        the first statement.
+                    </li>
+                    <li>
+                        <strong>Closing Cash Balance (31 Dec)</strong> — the cash / core (e.g. SPAXX)
+                        balance on your <strong>December</strong> statement.
+                    </li>
+                </ul>
+                <p class="mb-0">
+                    To download the statement PDF: sign in to Fidelity.com →
+                    <em>Accounts &amp; Trade → Statements</em> → choose the December statement for the
+                    reporting calendar year.
+                </p>
+            </div>
+        </details>
         <div class="row g-3">
             <div class="col-md-6">
                 <label class="form-label">Institution Name</label>
@@ -81,6 +121,33 @@
 <div class="card mb-3">
     <div class="card-header">3. Upload Broker Statement (CSV)</div>
     <div class="card-body">
+        <details class="mb-3">
+            <summary class="text-primary" role="button">Which Fidelity file is the "statement"? Where do I download it?</summary>
+            <div class="mt-2 small text-muted">
+                <p class="mb-1">
+                    Upload Fidelity's <strong>transaction history / activity export</strong> as
+                    <strong>CSV</strong> (not the PDF statement). This is the file that lists your
+                    RSU vests, dividends, tax withheld and share sales. To download it:
+                </p>
+                <ol class="mb-1">
+                    <li>Sign in to <strong>Fidelity.com</strong> (use the account that holds the
+                        vested shares).</li>
+                    <li>Go to <em>Accounts &amp; Trade → Portfolio</em>, then open
+                        <em>Activity &amp; Orders</em> (also shown as "History").</li>
+                    <li>Set the <strong>date range</strong> to cover the period you are filing —
+                        the <strong>calendar year (1 Jan–31 Dec)</strong> for Schedule FA and the
+                        <strong>financial year (1 Apr–31 Mar)</strong> for income. Tip: export a wide
+                        range covering both.</li>
+                    <li>Click <strong>Download</strong> and choose <strong>CSV</strong> (spreadsheet)
+                        format.</li>
+                </ol>
+                <p class="mb-0">
+                    The file should contain columns like
+                    <code>Run Date, Action, Symbol, Quantity, Price, Amount</code>. Header names may
+                    vary slightly — the parser recognises common variants automatically.
+                </p>
+            </div>
+        </details>
         <InputFile class="form-control" OnChange="OnFileSelected" accept=".csv" />
         @if (!string.IsNullOrEmpty(_csvFileName))
         {
@@ -93,6 +160,29 @@
 <div class="card mb-3">
     <div class="card-header">4. SBI TTBR Rates &amp; Year-end Prices</div>
     <div class="card-body">
+        <details class="mb-3">
+            <summary class="text-primary" role="button">What is SBI TTBR and where do I get the official rates?</summary>
+            <div class="mt-2 small text-muted">
+                <p class="mb-1">
+                    <strong>SBI TTBR</strong> is the State Bank of India
+                    <strong>Telegraphic Transfer Buying Rate</strong> for the foreign currency
+                    (USD here). Income tax <strong>Rule 128</strong> requires foreign income to be
+                    converted at the SBI TTBR on the <strong>last day of the month preceding</strong>
+                    the month of accrual — so you need <strong>month-end</strong> rates.
+                </p>
+                <p class="mb-1">The app cannot bundle live official rates (the sample set is
+                    illustrative only). Obtain the actual rates from a public source and paste them
+                    below, one <code>date,rate</code> per line:</p>
+                <ul class="mb-0">
+                    <li>State Bank of India's published forex / TT buying reference rates (SBI's
+                        website or its dealing-room rate history).</li>
+                    <li>Publicly archived SBI TTBR rate sheets that many CAs use for ITR foreign-income
+                        conversion.</li>
+                </ul>
+                <p class="mb-0 mt-1">Use the rate for each relevant month-end date. Always verify the
+                    figure against your own record before filing.</p>
+            </div>
+        </details>
         <div class="row g-3">
             <div class="col-md-6">
                 <label class="form-label">
