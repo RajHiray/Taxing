@@ -34,6 +34,51 @@ public class ParserTests
     }
 
     [Fact]
+    public void Fidelity_BlankSymbol_FallsBackToDescription()
+    {
+        // Real broker exports sometimes leave the Symbol column blank and name the
+        // security only in a Description column; the security identity must still be built.
+        const string csv =
+            "Run Date,Action,Symbol,Description,Quantity,Price,Amount\n" +
+            "01/15/2023,YOU BOUGHT (RSU VEST),,MICROSOFT CORP,10,250.00,2500.00\n" +
+            "06/15/2023,DIVIDEND RECEIVED,,MICROSOFT CORP,,,6.80\n";
+
+        var statement = StatementParserFactory.For(Broker.Fidelity)
+            .Parse(csv, new StatementMetadata { Currency = "USD" });
+
+        Assert.All(statement.Transactions, t => Assert.Equal("MICROSOFT CORP", t.Symbol));
+    }
+
+    [Fact]
+    public void Fidelity_FeeWithBlankSymbol_StaysSymbolLess()
+    {
+        // Pure cash/fee events should not be turned into bogus securities.
+        const string csv =
+            "Run Date,Action,Symbol,Description,Quantity,Price,Amount\n" +
+            "01/31/2023,FEE CHARGED,,ADVISOR FEE,,,-5.00\n";
+
+        var statement = StatementParserFactory.For(Broker.Fidelity)
+            .Parse(csv, new StatementMetadata { Currency = "USD" });
+
+        var fee = Assert.Single(statement.Transactions);
+        Assert.Equal(TransactionType.Fee, fee.Type);
+        Assert.Equal(string.Empty, fee.Symbol);
+    }
+
+    [Fact]
+    public void Fidelity_SymbolInAlternateHeader_IsRecognized()
+    {
+        const string csv =
+            "Run Date,Action,Symbol/CUSIP,Quantity,Price,Amount\n" +
+            "01/15/2023,YOU BOUGHT (RSU VEST),MSFT,10,250.00,2500.00\n";
+
+        var statement = StatementParserFactory.For(Broker.Fidelity)
+            .Parse(csv, new StatementMetadata { Currency = "USD" });
+
+        Assert.Equal("MSFT", Assert.Single(statement.Transactions).Symbol);
+    }
+
+    [Fact]
     public void Factory_ExposesAllBrokers()
     {
         Assert.Equal(3, StatementParserFactory.All.Count);

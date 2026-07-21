@@ -57,6 +57,31 @@ public class ItrCalculatorTests
     }
 
     [Fact]
+    public void A3_WhenNoSymbols_AddsDiagnosticWarning()
+    {
+        var fx = FxFixture.UsdRates();
+        var statement = new BrokerStatement
+        {
+            Broker = Broker.Fidelity,
+            InstitutionName = "Fidelity",
+            CountryCode = "US",
+            CountryCodeItr = "2",
+            AccountNumber = "****5678",
+            Currency = "USD",
+            Transactions = new List<BrokerTransaction>
+            {
+                new() { Date = new(2023, 6, 15), Type = TransactionType.Dividend,
+                        Symbol = string.Empty, Amount = 6.80m },
+            }
+        };
+
+        var result = new ItrCalculator(fx).Compute(statement, new TaxPeriod(2023));
+
+        Assert.Empty(result.ScheduleFaA3);
+        Assert.Contains(result.Warnings, w => w.Contains("Schedule FA A3 is empty"));
+    }
+
+    [Fact]
     public void A2_AggregatesSecuritiesAndCredits()
     {
         var result = ComputeDividendScenario();

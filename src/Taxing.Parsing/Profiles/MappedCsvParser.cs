@@ -18,6 +18,13 @@ public sealed class ColumnMap
     /// <summary>Candidate header names for the security symbol column.</summary>
     public required string[] SymbolHeaders { get; init; }
 
+    /// <summary>
+    /// Candidate header names for a security description/name column. Used as a fallback
+    /// source for the security identity when the symbol column is blank or absent.
+    /// </summary>
+    public string[] DescriptionHeaders { get; init; } =
+        { "Description", "Security Description", "Security", "Security Name", "Investment", "Fund Name" };
+
     /// <summary>Candidate header names for the quantity column.</summary>
     public required string[] QuantityHeaders { get; init; }
 
@@ -74,8 +81,8 @@ public abstract class MappedCsvParser : IStatementParser
                 $"Could not locate the expected columns for {DisplayName}. " +
                 "Please confirm you selected the correct broker and exported the transaction history.");
 
-        var (dateI, actionI, symbolI, qtyI, priceI, amountI) =
-            (idx[0], idx[1], idx[2], idx[3], idx[4], idx[5]);
+        var (dateI, actionI, symbolI, qtyI, priceI, amountI, descI) =
+            (idx[0], idx[1], idx[2], idx[3], idx[4], idx[5], idx[6]);
 
         var txns = new List<BrokerTransaction>();
         for (int r = headerIndex + 1; r < rows.Count; r++)
@@ -93,15 +100,24 @@ public abstract class MappedCsvParser : IStatementParser
             var price = ParseDecimal(Get(cols, priceI));
             var amount = ParseDecimal(Get(cols, amountI));
 
+            // Prefer the dedicated symbol column; when it is blank or absent, fall back to
+            // the description/security column so per-security schedules (e.g. FA A3) can
+            // still be built. Some broker exports name the security only in Description.
+            // Fees are pure cash events and are left symbol-less to avoid bogus holdings.
+            var symbol = Get(cols, symbolI).Trim().ToUpperInvariant();
+            var description = Get(cols, descI).Trim();
+            if (symbol.Length == 0 && type.Value != TransactionType.Fee)
+                symbol = NormalizeDescriptionSymbol(description);
+
             txns.Add(new BrokerTransaction
             {
                 Date = date,
                 Type = type.Value,
-                Symbol = Get(cols, symbolI).Trim().ToUpperInvariant(),
+                Symbol = symbol,
                 Quantity = Math.Abs(quantity),
                 PricePerShare = Math.Abs(price),
                 Amount = Math.Abs(amount),
-                Note = action
+                Note = description.Length > 0 ? description : action
             });
         }
 
@@ -141,14 +157,29 @@ public abstract class MappedCsvParser : IStatementParser
         var qtyI = Find(Map.QuantityHeaders);
         var priceI = Find(Map.PriceHeaders);
         var amountI = Find(Map.AmountHeaders);
+        var descI = Find(Map.DescriptionHeaders);
 
-        // Required: date, action, amount. Symbol/qty/price may be blank on cash rows.
+        // Required: date, action, amount. Symbol/qty/price/description may be blank on cash rows.
         if (dateI < 0 || actionI < 0 || amountI < 0) return null;
-        return new[] { dateI, actionI, symbolI, qtyI, priceI, amountI };
+        return new[] { dateI, actionI, symbolI, qtyI, priceI, amountI, descI };
     }
 
     private static string Get(string[] cols, int i) =>
         i >= 0 && i < cols.Length ? cols[i] : string.Empty;
+
+    /// <summary>
+    /// Turns a security description into a stable identity usable as a symbol when no ticker
+    /// column value is available (e.g. "Microsoft Corp" -&gt; "MICROSOFT CORP"). Returns an
+    /// empty string for values that are clearly not securities (blank).
+    /// </summary>
+    private static string NormalizeDescriptionSymbol(string description)
+    {
+        var d = description.Trim();
+        if (d.Length == 0) return string.Empty;
+        // Collapse internal whitespace and upper-case for consistent grouping.
+        return string.Join(' ',
+            d.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)).ToUpperInvariant();
+    }
 
     private bool TryParseDate(string value, out DateOnly date)
     {

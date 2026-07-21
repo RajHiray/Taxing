@@ -68,6 +68,13 @@ public sealed class ItrCalculator
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(x => x, StringComparer.OrdinalIgnoreCase);
 
+        if (!symbols.Any() && s.Transactions.Count > 0)
+            warnings.Add(
+                "Schedule FA A3 is empty: transactions were read but none carried a security " +
+                "symbol or name, so per-security holdings could not be built. Confirm the correct " +
+                "broker is selected and that your export includes a Symbol/Ticker (or Description) " +
+                "column identifying each security.");
+
         foreach (var symbol in symbols)
         {
             var txns = s.Transactions

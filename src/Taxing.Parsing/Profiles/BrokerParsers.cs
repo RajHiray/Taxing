@@ -12,7 +12,7 @@ public sealed class FidelityParser : MappedCsvParser
     {
         DateHeaders = new[] { "Run Date", "Date", "Transaction Date" },
         ActionHeaders = new[] { "Action", "Transaction Type", "Description" },
-        SymbolHeaders = new[] { "Symbol", "Ticker" },
+        SymbolHeaders = new[] { "Symbol", "Ticker", "Symbol/CUSIP", "Symbol / CUSIP" },
         QuantityHeaders = new[] { "Quantity", "Shares" },
         PriceHeaders = new[] { "Price", "Price ($)", "Price Per Share" },
         AmountHeaders = new[] { "Amount", "Amount ($)", "Net Amount" },
@@ -50,7 +50,7 @@ public sealed class MorganStanleyParser : MappedCsvParser
     {
         DateHeaders = new[] { "Date", "Transaction Date", "Activity Date" },
         ActionHeaders = new[] { "Activity", "Transaction Type", "Type", "Description" },
-        SymbolHeaders = new[] { "Symbol", "Security", "Ticker" },
+        SymbolHeaders = new[] { "Symbol", "Security", "Ticker", "Security Symbol" },
         QuantityHeaders = new[] { "Quantity", "Shares", "Number of Shares" },
         PriceHeaders = new[] { "Price", "Share Price", "Market Value Per Share" },
         AmountHeaders = new[] { "Amount", "Net Amount", "Total Value" },

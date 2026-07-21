@@ -308,6 +308,10 @@
 
             if (_result.ScheduleFaA3.Count == 0 && _result.ScheduleFsi.Count == 0)
                 _error = "No foreign holdings or income were found. Check the broker selection and file.";
+            else if (_result.ScheduleFaA3.Count == 0)
+                _error = "Schedule FA A3 is empty — no per-security holdings were detected. " +
+                         "Check that your statement includes a Symbol/Ticker (or Description) column " +
+                         "for each security, and that the correct broker is selected.";
         }
         catch (Exception ex)
         {
