@@ -82,7 +82,7 @@ public class ParserTests
     }
 
     [Fact]
-    public void Fidelity_Reinvestment_IsParsedAsVest()
+    public void Fidelity_Reinvestment_IsSkipped()
     {
         const string csv =
             "Transaction date,Transaction type,Investment name,Shares,Amount\n" +
@@ -91,10 +91,23 @@ public class ParserTests
         var statement = StatementParserFactory.For(Broker.Fidelity)
             .Parse(csv, new StatementMetadata { Currency = "USD" });
 
+        Assert.Empty(statement.Transactions);
+    }
+
+    [Fact]
+    public void Fidelity_ConversionSharesDeposited_IsParsedAsVest()
+    {
+        const string csv =
+            "Transaction date,Transaction type,Investment name,Shares,Amount\n" +
+            "Mar-02-2026,CONVERSION SHARES DEPOSITED,MICROSOFT CORP,0.688,$0.0\n";
+
+        var statement = StatementParserFactory.For(Broker.Fidelity)
+            .Parse(csv, new StatementMetadata { Currency = "USD" });
+
         var txn = Assert.Single(statement.Transactions);
         Assert.Equal(TransactionType.Vest, txn.Type);
-        Assert.Equal(0.14m, txn.Quantity);
-        Assert.Equal(0.14m, txn.Amount);
+        Assert.Equal("MICROSOFT CORP", txn.Symbol);
+        Assert.Equal(0.688m, txn.Quantity);
     }
 
     [Fact]

@@ -26,10 +26,10 @@ public sealed class FidelityParser : MappedCsvParser
 
         if (a.Contains("WITHHOLD") || a.Contains("TAX") || a.Contains("NRA"))
             return TransactionType.TaxWithheld;
-        // Reinvestment rows typically represent share acquisition (paired with a
-        // separate dividend credit row), so treat them as acquisition lots.
+        // Fidelity "REINVESTMENT REINVEST @ $1.000" rows are commonly broker cash-sweep
+        // fund movements (for example MMKT fund), not equity vest/acquisition events for A3.
         if (a.Contains("REINVEST"))
-            return TransactionType.Vest;
+            return null;
         if (a.Contains("DIVIDEND") || a.Contains("DIV"))
             return TransactionType.Dividend;
         if (a.Contains("YOU BOUGHT") || a.Contains("VEST") || a.Contains("DEPOSIT") ||
