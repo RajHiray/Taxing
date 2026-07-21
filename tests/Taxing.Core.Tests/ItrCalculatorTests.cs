@@ -57,6 +57,44 @@ public class ItrCalculatorTests
     }
 
     [Fact]
+    public void A3_CreatesDateWiseRows_PerAcquisitionDate()
+    {
+        var fx = FxFixture.UsdRates();
+        var options = new CalculatorOptions
+        {
+            ClosingPricesForeign = new Dictionary<string, decimal> { ["MMKT"] = 1m }
+        };
+        var statement = new BrokerStatement
+        {
+            Broker = Broker.Fidelity,
+            CountryCode = "US",
+            CountryCodeItr = "2",
+            Currency = "USD",
+            Transactions = new List<BrokerTransaction>
+            {
+                new() { Date = new(2026, 1, 30), Type = TransactionType.Vest,
+                        Symbol = "MMKT", Quantity = 0.13m, PricePerShare = 0m, Amount = 0.13m },
+                new() { Date = new(2026, 2, 27), Type = TransactionType.Vest,
+                        Symbol = "MMKT", Quantity = 0.11m, PricePerShare = 0m, Amount = 0.11m },
+                new() { Date = new(2026, 3, 31), Type = TransactionType.Dividend,
+                        Symbol = "MMKT", Amount = 0.24m },
+            }
+        };
+
+        var result = new ItrCalculator(fx, options).Compute(statement, new TaxPeriod(2026));
+        var rows = result.ScheduleFaA3
+            .Where(r => r.Symbol == "MMKT")
+            .OrderBy(r => r.AcquisitionDate)
+            .ToList();
+
+        Assert.Equal(2, rows.Count);
+        Assert.Equal(new DateOnly(2026, 1, 30), rows[0].AcquisitionDate);
+        Assert.Equal(new DateOnly(2026, 2, 27), rows[1].AcquisitionDate);
+        Assert.True(rows[0].InitialValueInr > 0);
+        Assert.True(rows[1].InitialValueInr > 0);
+    }
+
+    [Fact]
     public void A3_WhenNoSymbols_AddsDiagnosticWarning()
     {
         var fx = FxFixture.UsdRates();

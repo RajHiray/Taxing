@@ -26,7 +26,11 @@ public sealed class FidelityParser : MappedCsvParser
 
         if (a.Contains("WITHHOLD") || a.Contains("TAX") || a.Contains("NRA"))
             return TransactionType.TaxWithheld;
-        if (a.Contains("DIVIDEND") || a.Contains("DIV") || a.Contains("REINVEST"))
+        // Reinvestment rows typically represent share acquisition (paired with a
+        // separate dividend credit row), so treat them as acquisition lots.
+        if (a.Contains("REINVEST"))
+            return TransactionType.Vest;
+        if (a.Contains("DIVIDEND") || a.Contains("DIV"))
             return TransactionType.Dividend;
         if (a.Contains("YOU BOUGHT") || a.Contains("VEST") || a.Contains("DEPOSIT") ||
             a.Contains("RECEIVED") || a.Contains("RSU") || a.Contains("ESPP"))

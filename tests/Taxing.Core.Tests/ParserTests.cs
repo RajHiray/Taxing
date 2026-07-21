@@ -82,6 +82,22 @@ public class ParserTests
     }
 
     [Fact]
+    public void Fidelity_Reinvestment_IsParsedAsVest()
+    {
+        const string csv =
+            "Transaction date,Transaction type,Investment name,Shares,Amount\n" +
+            "Mar-31-2026,REINVESTMENT REINVEST @ $1.000,FID TREASURY ONLY MMKT FUND CL OUS,0.14,-$0.14\n";
+
+        var statement = StatementParserFactory.For(Broker.Fidelity)
+            .Parse(csv, new StatementMetadata { Currency = "USD" });
+
+        var txn = Assert.Single(statement.Transactions);
+        Assert.Equal(TransactionType.Vest, txn.Type);
+        Assert.Equal(0.14m, txn.Quantity);
+        Assert.Equal(0.14m, txn.Amount);
+    }
+
+    [Fact]
     public void Fidelity_SymbolInAlternateHeader_IsRecognized()
     {
         const string csv =

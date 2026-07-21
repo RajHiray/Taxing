@@ -73,22 +73,27 @@ public static class ExcelExporter
     private static void BuildA3(XLWorkbook wb, ItrResult r)
     {
         var ws = AddSheet(wb, "FA-A3 Equity",
-            "Country Code", "Name of Entity", "Address", "Symbol",
-            "Acquisition Date", "Initial Value (INR)", "Peak Value (INR)",
-            "Closing Value (INR)", "Gross Dividend (INR)", "Sale Proceeds (INR)");
+            "Country/Region name", "Country Name and Code", "Name of entity",
+            "Address of entity", "ZIP Code", "Nature of entity",
+            "Date of acquiring the interest", "Initial value of the investment",
+            "Peak value of investment during the Period", "Closing balance",
+            "Total gross amount paid/credited with respect to the holding during the period",
+            "Total gross proceeds from sale or redemption of investment during the period");
         int row = 2;
         foreach (var a in r.ScheduleFaA3)
         {
-            ws.Cell(row, 1).Value = Safe(a.CountryCodeItr);
-            ws.Cell(row, 2).Value = Safe(a.EntityName);
-            ws.Cell(row, 3).Value = Safe(a.EntityAddress);
-            ws.Cell(row, 4).Value = Safe(a.Symbol);
-            ws.Cell(row, 5).Value = a.AcquisitionDate?.ToString("yyyy-MM-dd") ?? string.Empty;
-            ws.Cell(row, 6).Value = a.InitialValueInr;
-            ws.Cell(row, 7).Value = a.PeakValueInr;
-            ws.Cell(row, 8).Value = a.ClosingValueInr;
-            ws.Cell(row, 9).Value = a.GrossDividendInr;
-            ws.Cell(row, 10).Value = a.ProceedsInr;
+            ws.Cell(row, 1).Value = Safe(a.CountryCode);
+            ws.Cell(row, 2).Value = Safe($"{a.CountryCode} ({a.CountryCodeItr})");
+            ws.Cell(row, 3).Value = Safe(a.EntityName);
+            ws.Cell(row, 4).Value = Safe(a.EntityAddress);
+            ws.Cell(row, 5).Value = string.Empty; // not available in source statement metadata
+            ws.Cell(row, 6).Value = Safe("Equity and Debt Interest");
+            ws.Cell(row, 7).Value = a.AcquisitionDate?.ToString("yyyy-MM-dd") ?? string.Empty;
+            ws.Cell(row, 8).Value = a.InitialValueInr;
+            ws.Cell(row, 9).Value = a.PeakValueInr;
+            ws.Cell(row, 10).Value = a.ClosingValueInr;
+            ws.Cell(row, 11).Value = a.GrossDividendInr;
+            ws.Cell(row, 12).Value = a.ProceedsInr;
             row++;
         }
         ws.Columns().AdjustToContents();

@@ -1,6 +1,7 @@
 using Taxing.Core.Engine;
 using Taxing.Core.Models;
 using Taxing.Export;
+using ClosedXML.Excel;
 
 namespace Taxing.Core.Tests;
 
@@ -56,5 +57,19 @@ public class ExportTests
         var result = SampleResult();
         var bytes = ExcelExporter.ToWorkbook(result);
         Assert.True(bytes.Length > 0);
+    }
+
+    [Fact]
+    public void Excel_A3_UsesItrColumnHeadings()
+    {
+        var bytes = ExcelExporter.ToWorkbook(SampleResult());
+        using var ms = new MemoryStream(bytes);
+        using var wb = new XLWorkbook(ms);
+        var ws = wb.Worksheet("FA-A3 Equity");
+
+        Assert.Equal("Country/Region name", ws.Cell(1, 1).GetString());
+        Assert.Equal("Country Name and Code", ws.Cell(1, 2).GetString());
+        Assert.Equal("Name of entity", ws.Cell(1, 3).GetString());
+        Assert.Equal("Date of acquiring the interest", ws.Cell(1, 7).GetString());
     }
 }

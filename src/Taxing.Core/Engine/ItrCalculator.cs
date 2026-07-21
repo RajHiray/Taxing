@@ -82,15 +82,15 @@ public sealed class ItrCalculator
                 .OrderBy(t => t.Date)
                 .ToList();
 
-            // Determine acquisition date/cost from the first vest at or before the CY end.
-            var vests = txns.Where(t => t.Type == TransactionType.Vest).ToList();
-            DateOnly? acqDate = vests.Count > 0 ? vests.Min(t => t.Date) : null;
+            // Acquire-lot rows are produced date-wise from vest/reinvestment events.
+            var vests = txns.Where(t => t.Type == TransactionType.Vest && t.Date <= p.CalendarYearEnd).ToList();
+            DateOnly? firstAcqDate = vests.Count > 0 ? vests.Min(t => t.Date) : null;
 
             decimal initialValueInr = 0m;
-            foreach (var v in vests.Where(v => v.Date <= p.CalendarYearEnd))
+            foreach (var v in vests)
             {
                 var rate = _fx.GetRate(currency, v.Date);
-                initialValueInr += v.Quantity * v.PricePerShare * rate;
+                initialValueInr += v.Quantity * EffectiveVestPrice(v) * rate;
             }
 
             // Peak value: approximate across event dates within the calendar year using
@@ -106,7 +106,10 @@ public sealed class ItrCalculator
             {
                 if (t.Type == TransactionType.Vest || t.Type == TransactionType.Sale)
                 {
-                    if (t.PricePerShare > 0) lastPriceForeign = t.PricePerShare;
+                    var eventPrice = t.Type == TransactionType.Vest
+                        ? EffectiveVestPrice(t)
+                        : t.PricePerShare;
+                    if (eventPrice > 0) lastPriceForeign = eventPrice;
 
                     if (t.Date < p.CalendarYearStart)
                     {
@@ -117,7 +120,7 @@ public sealed class ItrCalculator
 
                     runningShares += t.Type == TransactionType.Vest ? t.Quantity : -t.Quantity;
 
-                    var price = t.PricePerShare > 0 ? t.PricePerShare : lastPriceForeign;
+                    var price = eventPrice > 0 ? eventPrice : lastPriceForeign;
                     var valForeign = runningShares * price;
                     if (valForeign > peakForeign)
                     {
@@ -162,24 +165,67 @@ public sealed class ItrCalculator
                         "Provide the year-end market price for accuracy.");
             }
 
-            rows.Add(new ScheduleFaA3
+            // Date-wise A3 rows: one row per acquisition date for this security.
+            var lotsByDate = vests
+                .Where(v => v.Quantity > 0)
+                .GroupBy(v => v.Date)
+                .OrderBy(g => g.Key)
+                .ToList();
+
+            if (lotsByDate.Count == 0)
             {
-                CountryCode = s.CountryCode,
-                CountryCodeItr = s.CountryCodeItr,
-                EntityName = symbol,
-                EntityAddress = s.InstitutionAddress,
-                Symbol = symbol,
-                AcquisitionDate = acqDate,
-                InitialValueInr = RoundInr(initialValueInr),
-                PeakValueInr = RoundInr(peakInr),
-                ClosingValueInr = RoundInr(closingInr),
-                GrossDividendInr = RoundInr(grossDivInr),
-                ProceedsInr = RoundInr(proceedsInr),
-                ClosingShares = closingShares
-            });
+                rows.Add(new ScheduleFaA3
+                {
+                    CountryCode = s.CountryCode,
+                    CountryCodeItr = s.CountryCodeItr,
+                    EntityName = symbol,
+                    EntityAddress = s.InstitutionAddress,
+                    Symbol = symbol,
+                    AcquisitionDate = firstAcqDate,
+                    InitialValueInr = RoundInr(initialValueInr),
+                    PeakValueInr = RoundInr(peakInr),
+                    ClosingValueInr = RoundInr(closingInr),
+                    GrossDividendInr = RoundInr(grossDivInr),
+                    ProceedsInr = RoundInr(proceedsInr),
+                    ClosingShares = closingShares
+                });
+                continue;
+            }
+
+            var totalLotShares = lotsByDate.Sum(g => g.Sum(v => v.Quantity));
+            foreach (var lot in lotsByDate)
+            {
+                var lotShares = lot.Sum(v => v.Quantity);
+                var lotWeight = totalLotShares > 0 ? lotShares / totalLotShares : 1m / lotsByDate.Count;
+                var lotInitialInr = lot.Sum(v =>
+                    v.Quantity * EffectiveVestPrice(v) * _fx.GetRate(currency, v.Date));
+
+                rows.Add(new ScheduleFaA3
+                {
+                    CountryCode = s.CountryCode,
+                    CountryCodeItr = s.CountryCodeItr,
+                    EntityName = symbol,
+                    EntityAddress = s.InstitutionAddress,
+                    Symbol = symbol,
+                    AcquisitionDate = lot.Key,
+                    InitialValueInr = RoundInr(lotInitialInr),
+                    PeakValueInr = RoundInr(peakInr * lotWeight),
+                    ClosingValueInr = RoundInr(closingInr * lotWeight),
+                    GrossDividendInr = RoundInr(grossDivInr * lotWeight),
+                    ProceedsInr = RoundInr(proceedsInr * lotWeight),
+                    ClosingShares = closingShares * lotWeight
+                });
+            }
         }
 
         return rows;
+    }
+
+    private static decimal EffectiveVestPrice(BrokerTransaction t)
+    {
+        if (t.PricePerShare > 0) return t.PricePerShare;
+        if (t.Quantity > 0 && t.Amount > 0) return t.Amount / t.Quantity;
+        return 0m;
     }
 
     private decimal ResolveClosingPrice(string symbol, decimal fallback)

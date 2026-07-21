@@ -36,7 +36,7 @@ public sealed class ScheduleFaA2
 
 /// <summary>
 /// Schedule FA — Section A3: Foreign Equity &amp; Debt Interest.
-/// One row per security held during the calendar year.
+/// One row per security acquisition date (date-wise lots) held during the calendar year.
 /// </summary>
 public sealed class ScheduleFaA3
 {
