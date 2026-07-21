@@ -66,6 +66,22 @@ public class ParserTests
     }
 
     [Fact]
+    public void Fidelity_InvestmentNameHeader_FallsBackToDescription()
+    {
+        const string csv =
+            "Transaction date,Transaction type,Investment name,Shares,Amount\n" +
+            "Mar-31-2026,DIVIDEND RECEIVED,FID TREASURY ONLY MMKT FUND CL OUS,-,$0.14\n";
+
+        var statement = StatementParserFactory.For(Broker.Fidelity)
+            .Parse(csv, new StatementMetadata { Currency = "USD" });
+
+        var dividend = Assert.Single(statement.Transactions);
+        Assert.Equal(TransactionType.Dividend, dividend.Type);
+        Assert.Equal("FID TREASURY ONLY MMKT FUND CL OUS", dividend.Symbol);
+        Assert.Equal(0.14m, dividend.Amount);
+    }
+
+    [Fact]
     public void Fidelity_SymbolInAlternateHeader_IsRecognized()
     {
         const string csv =

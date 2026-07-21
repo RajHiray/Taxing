@@ -23,7 +23,7 @@ public sealed class ColumnMap
     /// source for the security identity when the symbol column is blank or absent.
     /// </summary>
     public string[] DescriptionHeaders { get; init; } =
-        { "Description", "Security Description", "Security", "Security Name", "Investment", "Fund Name" };
+        { "Description", "Security Description", "Security", "Security Name", "Investment", "Investment Name", "Fund Name" };
 
     /// <summary>Candidate header names for the quantity column.</summary>
     public required string[] QuantityHeaders { get; init; }
