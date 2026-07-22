@@ -199,6 +199,45 @@ public class ParserTests
     }
 
     [Fact]
+    public void Fidelity_LotsCsv_WithoutCostBasisColumn_IsStillParsed()
+    {
+        // A positions / tax-lot export that carries acquisition date, quantity and symbol but no
+        // recognizable cost-basis column must still be accepted: the vest-day price supplied in
+        // Step 4 fills the FA A3 initial value, so we should not reject the file outright.
+        const string csv =
+            "Symbol,Description,Quantity,Date Acquired\n" +
+            "MSFT,MICROSOFT CORP,3,09/02/2025\n";
+
+        var statement = StatementParserFactory.For(Broker.Fidelity)
+            .Parse(csv, new StatementMetadata { Currency = "USD" });
+
+        var lot = Assert.Single(statement.Transactions);
+        Assert.Equal(TransactionType.Vest, lot.Type);
+        Assert.Equal("MSFT", lot.Symbol);
+        Assert.Equal(new DateOnly(2025, 9, 2), lot.Date);
+        Assert.Equal(3m, lot.Quantity);
+        Assert.Equal(0m, lot.PricePerShare); // filled later from the acquisition/vest-day price box
+    }
+
+    [Fact]
+    public void Fidelity_UnrecognizableFile_ErrorListsDetectedColumns()
+    {
+        // When neither a transaction history nor a lots export can be recognized, the error must
+        // echo the columns we actually read so the user can diagnose / share them.
+        const string csv =
+            "Foo,Bar,Baz\n" +
+            "1,2,3\n";
+
+        var ex = Assert.Throws<FormatException>(() => StatementParserFactory.For(Broker.Fidelity)
+            .Parse(csv, new StatementMetadata { Currency = "USD" }));
+
+        Assert.Contains("Columns detected in your file:", ex.Message);
+        Assert.Contains("Foo", ex.Message);
+        Assert.Contains("Bar", ex.Message);
+        Assert.Contains("Baz", ex.Message);
+    }
+
+    [Fact]
     public void Factory_ExposesAllBrokers()
     {
         Assert.Equal(3, StatementParserFactory.All.Count);

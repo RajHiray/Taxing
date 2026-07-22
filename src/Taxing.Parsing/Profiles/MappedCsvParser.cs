@@ -118,7 +118,8 @@ public abstract class MappedCsvParser : IStatementParser
             throw new FormatException(
                 $"Could not locate the expected columns for {DisplayName}. " +
                 "Please confirm you selected the correct broker and exported the transaction " +
-                "history or a cost-basis (tax lots) CSV.");
+                "history or a cost-basis (tax lots) CSV. " +
+                DescribeDetectedColumns(rows));
         }
         var (dateI, actionI, symbolI, qtyI, priceI, amountI, descI) =
             (idx[0], idx[1], idx[2], idx[3], idx[4], idx[5], idx[6]);
@@ -204,14 +205,18 @@ public abstract class MappedCsvParser : IStatementParser
             var q = Find(Map.LotQuantityHeaders);
             var cps = Find(Map.LotCostPerShareHeaders);
             var tc = Find(Map.LotTotalCostHeaders);
+            var s = Find(Map.SymbolHeaders);
+            var d = Find(Map.DescriptionHeaders);
 
-            // A lots export must identify an acquisition date, a quantity, and some cost basis.
-            if (a >= 0 && q >= 0 && (cps >= 0 || tc >= 0))
+            // A lots export must identify an acquisition date, a quantity and a security
+            // (symbol or description). A cost-basis column is preferred but not required: when
+            // the export omits it (or names it in a way we don't recognize), the per-security
+            // vest-day price supplied in Step 4 fills the FA A3 initial value and CG cost basis.
+            if (a >= 0 && q >= 0 && (s >= 0 || d >= 0))
             {
                 headerIndex = r;
                 acquiredI = a; qtyI = q; costPerShareI = cps; totalCostI = tc;
-                symbolI = Find(Map.SymbolHeaders);
-                descI = Find(Map.DescriptionHeaders);
+                symbolI = s; descI = d;
                 break;
             }
         }
@@ -283,6 +288,32 @@ public abstract class MappedCsvParser : IStatementParser
 
     private static string Get(string[] cols, int i) =>
         i >= 0 && i < cols.Length ? cols[i] : string.Empty;
+
+    /// <summary>
+    /// Builds a short, diagnosable hint listing the column names we actually saw in the upload so
+    /// the user can tell at a glance which columns the app read (and share them if they still don't
+    /// match). Picks the row with the most distinct non-empty cells as the likely header row.
+    /// </summary>
+    private static string DescribeDetectedColumns(IReadOnlyList<string[]> rows)
+    {
+        string[]? best = null;
+        int bestCount = 0;
+        for (int r = 0; r < rows.Count; r++)
+        {
+            var nonEmpty = rows[r].Count(c => !string.IsNullOrWhiteSpace(c));
+            if (nonEmpty > bestCount) { bestCount = nonEmpty; best = rows[r]; }
+        }
+
+        if (best is null || bestCount == 0)
+            return "The file appears to have no readable columns.";
+
+        var names = best
+            .Where(c => !string.IsNullOrWhiteSpace(c))
+            .Select(c => c.Trim())
+            .Take(20)
+            .ToArray();
+        return "Columns detected in your file: " + string.Join(", ", names) + ".";
+    }
 
     /// <summary>
     /// True when a CSV header cell matches any candidate name, comparing on a normalized form so
