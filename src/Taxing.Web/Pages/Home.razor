@@ -214,6 +214,20 @@
                     Used to value Schedule FA closing holdings. If omitted, the last observed price is used.
                 </small>
             </div>
+            <div class="col-md-12">
+                <label class="form-label">
+                    Acquisition / vest-day prices (@_currency) — <code>SYMBOL,price</code> or
+                    <code>SYMBOL,yyyy-MM-dd,price</code> per line
+                </label>
+                <textarea class="form-control font-monospace" rows="4" @bind="_acquisitionPricesText"
+                          placeholder="MSFT,250.00&#10;MSFT,2023-04-20,290.00"></textarea>
+                <small class="d-block text-muted mt-1">
+                    Only needed when your export lists RSU/ESPP vests as share deposits with no price
+                    or amount. For RSUs this is the <strong>fair market value on the vesting date</strong>,
+                    which becomes the Schedule FA Initial value and the capital-gains cost basis. Use the
+                    date-specific form to price each lot exactly.
+                </small>
+            </div>
         </div>
     </div>
 </div>
@@ -248,6 +262,7 @@
 
     private string _fxText = string.Empty;
     private string _closingPricesText = string.Empty;
+    private string _acquisitionPricesText = string.Empty;
 
     private ItrResult? _result;
     private string? _error;
@@ -307,7 +322,8 @@
             var fx = InputParsers.ParseFxRates(_fxText, _currency);
             var options = new CalculatorOptions
             {
-                ClosingPricesForeign = InputParsers.ParseClosingPrices(_closingPricesText)
+                ClosingPricesForeign = InputParsers.ParseClosingPrices(_closingPricesText),
+                AcquisitionPricesForeign = InputParsers.ParseAcquisitionPrices(_acquisitionPricesText)
             };
 
             var period = TaxPeriod.FromAssessmentYear(_assessmentYearStart);

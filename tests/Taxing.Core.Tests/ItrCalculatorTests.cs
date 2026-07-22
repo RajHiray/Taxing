@@ -307,6 +307,89 @@ public class ItrCalculatorTests
     }
 
     [Fact]
+    public void A3_UsesAcquisitionPriceFallback_WhenVestHasNoPriceOrAmount()
+    {
+        // RSU/ESPP share-deposit rows often carry a quantity but no price or cash amount, which
+        // would leave the FA A3 Initial value at zero. A user-supplied vest-day price fills it in.
+        var statement = new BrokerStatement
+        {
+            Broker = Broker.Fidelity,
+            Currency = "USD",
+            Transactions = new List<BrokerTransaction>
+            {
+                new() { Date = new(2023, 1, 15), Type = TransactionType.Vest,
+                        Symbol = "MSFT", Quantity = 10m, PricePerShare = 0m, Amount = 0m },
+            }
+        };
+
+        var options = new CalculatorOptions
+        {
+            AcquisitionPricesForeign = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MSFT"] = 250m
+            }
+        };
+
+        var result = new ItrCalculator(FxFixture.UsdRates(), options)
+            .Compute(statement, new TaxPeriod(2023));
+        var row = Assert.Single(result.ScheduleFaA3);
+
+        Assert.Equal(202500m, row.InitialValueInr); // 10 * 250 * 81
+        Assert.DoesNotContain(result.Warnings, w => w.Contains("Initial value is understated"));
+    }
+
+    [Fact]
+    public void A3_DateSpecificAcquisitionPrice_TakesPrecedence()
+    {
+        var statement = new BrokerStatement
+        {
+            Broker = Broker.Fidelity,
+            Currency = "USD",
+            Transactions = new List<BrokerTransaction>
+            {
+                new() { Date = new(2023, 1, 15), Type = TransactionType.Vest,
+                        Symbol = "MSFT", Quantity = 10m },
+            }
+        };
+
+        var options = new CalculatorOptions
+        {
+            AcquisitionPricesForeign = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["MSFT"] = 100m,
+                ["MSFT@2023-01-15"] = 250m
+            }
+        };
+
+        var row = Assert.Single(new ItrCalculator(FxFixture.UsdRates(), options)
+            .Compute(statement, new TaxPeriod(2023)).ScheduleFaA3);
+
+        Assert.Equal(202500m, row.InitialValueInr); // date-specific 250 wins over 100
+    }
+
+    [Fact]
+    public void A3_WarnsWhenVestPriceMissingAndNoAcquisitionPrice()
+    {
+        var statement = new BrokerStatement
+        {
+            Broker = Broker.Fidelity,
+            Currency = "USD",
+            Transactions = new List<BrokerTransaction>
+            {
+                new() { Date = new(2023, 1, 15), Type = TransactionType.Vest,
+                        Symbol = "MSFT", Quantity = 10m },
+            }
+        };
+
+        var result = new ItrCalculator(FxFixture.UsdRates())
+            .Compute(statement, new TaxPeriod(2023));
+        var row = Assert.Single(result.ScheduleFaA3);
+
+        Assert.Equal(0m, row.InitialValueInr);
+        Assert.Contains(result.Warnings, w => w.Contains("A3[MSFT]") && w.Contains("no price or amount"));
+    }
+
+    [Fact]
     public void TaxPeriod_LabelsAndWindows()
     {
         var p = new TaxPeriod(2023);

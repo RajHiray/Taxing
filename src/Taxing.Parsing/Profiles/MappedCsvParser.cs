@@ -44,17 +44,29 @@ public sealed class ColumnMap
     /// </summary>
     public string[] LotAcquiredHeaders { get; init; } =
         { "Date Acquired", "Acquired", "Acquisition Date", "Date of Acquisition", "Acquired Date",
-          "Open Date", "Purchase Date", "Acquired Date/Lot" };
+          "Open Date", "Purchase Date", "Acquired Date/Lot", "Vest Date", "Vested Date",
+          "Date Vested", "Grant Date", "Lot Date", "Trade Date", "Settlement Date" };
+
+    /// <summary>
+    /// Candidate header names for the shares column on a lots export. These supplement
+    /// <see cref="QuantityHeaders"/> so lot exports are recognized regardless of broker profile.
+    /// </summary>
+    public string[] LotQuantityHeaders { get; init; } =
+        { "Quantity", "Shares", "No. of Shares", "Number of Shares", "Share Quantity",
+          "Quantity Held", "Shares Held", "Vested Quantity", "Vested Shares", "Qty" };
 
     /// <summary>Candidate header names for a lot's per-share cost basis.</summary>
     public string[] LotCostPerShareHeaders { get; init; } =
         { "Cost Basis Per Share", "Cost Per Share", "Cost/Share", "Cost basis/share", "Unit Cost",
-          "Average Cost Basis", "Acquisition Price", "Price Per Share", "Acquisition Cost Per Share" };
+          "Average Cost Basis", "Acquisition Price", "Price Per Share", "Acquisition Cost Per Share",
+          "Cost Basis/Share", "Vest Price", "Vest Date FMV", "FMV Per Share", "Grant Price",
+          "Purchase Price", "Market Value Per Share" };
 
     /// <summary>Candidate header names for a lot's total cost basis.</summary>
     public string[] LotTotalCostHeaders { get; init; } =
         { "Cost Basis", "Total Cost Basis", "Adjusted Cost Basis", "Cost Basis Total", "Total Cost",
-          "Acquisition Cost", "Cost" };
+          "Acquisition Cost", "Cost", "Cost Basis Amount", "Total Cost Basis Amount",
+          "Original Cost Basis", "Book Cost", "Total Acquisition Cost" };
 
     /// <summary>
     /// Maps a broker action string to a canonical <see cref="TransactionType"/>.
@@ -183,17 +195,13 @@ public abstract class MappedCsvParser : IStatementParser
             int Find(string[] names)
             {
                 for (int i = 0; i < rows[r].Length; i++)
-                {
-                    var h = rows[r][i].Trim();
-                    foreach (var n in names)
-                        if (h.Equals(n, StringComparison.OrdinalIgnoreCase))
-                            return i;
-                }
+                    if (HeaderMatches(rows[r][i], names))
+                        return i;
                 return -1;
             }
 
             var a = Find(Map.LotAcquiredHeaders);
-            var q = Find(Map.QuantityHeaders);
+            var q = Find(Map.LotQuantityHeaders);
             var cps = Find(Map.LotCostPerShareHeaders);
             var tc = Find(Map.LotTotalCostHeaders);
 
@@ -255,12 +263,8 @@ public abstract class MappedCsvParser : IStatementParser
         int Find(string[] names)
         {
             for (int i = 0; i < header.Length; i++)
-            {
-                var h = header[i].Trim();
-                foreach (var n in names)
-                    if (h.Equals(n, StringComparison.OrdinalIgnoreCase))
-                        return i;
-            }
+                if (HeaderMatches(header[i], names))
+                    return i;
             return -1;
         }
 
@@ -279,6 +283,41 @@ public abstract class MappedCsvParser : IStatementParser
 
     private static string Get(string[] cols, int i) =>
         i >= 0 && i < cols.Length ? cols[i] : string.Empty;
+
+    /// <summary>
+    /// True when a CSV header cell matches any candidate name, comparing on a normalized form so
+    /// real-world variants (currency/qualifier suffixes, punctuation, spacing) are tolerated —
+    /// e.g. "Price ($)", "Quantity (shares)", "No. of Shares", "Cost Basis/Share".
+    /// </summary>
+    private static bool HeaderMatches(string header, string[] names)
+    {
+        var h = NormalizeHeader(header);
+        if (h.Length == 0) return false;
+        foreach (var n in names)
+            if (h == NormalizeHeader(n))
+                return true;
+        return false;
+    }
+
+    /// <summary>
+    /// Normalizes a header for tolerant comparison: drops parenthetical qualifiers (e.g. "($)",
+    /// "(shares)"), lower-cases, turns any punctuation into spaces and collapses whitespace.
+    /// </summary>
+    private static string NormalizeHeader(string header)
+    {
+        if (string.IsNullOrWhiteSpace(header)) return string.Empty;
+        var sb = new System.Text.StringBuilder(header.Length);
+        var depth = 0;
+        foreach (var ch in header)
+        {
+            if (ch == '(' || ch == '[') { depth++; continue; }
+            if (ch == ')' || ch == ']') { if (depth > 0) depth--; continue; }
+            if (depth > 0) continue;
+            sb.Append(char.IsLetterOrDigit(ch) ? char.ToLowerInvariant(ch) : ' ');
+        }
+        return string.Join(' ',
+            sb.ToString().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+    }
 
     /// <summary>
     /// Turns a security description into a stable identity usable as a symbol when no ticker

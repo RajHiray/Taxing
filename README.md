@@ -69,6 +69,11 @@ Then open the printed `http://localhost:<port>` URL.
 4. Provide **SBI TTBR rates** — the State Bank of India **Telegraphic Transfer Buying Rate**
    (month-end values, from a public SBI rate source; a sample set is bundled — replace with official
    rates) and the **31 December price** per symbol.
+   - If your export lists RSU/ESPP vests as **share deposits with no price or amount**, also enter
+     the **acquisition / vest-day price** per security as `SYMBOL,price` (or `SYMBOL,yyyy-MM-dd,price`
+     to price each lot). For RSUs this is the **fair market value on the vesting date**, which the
+     tool uses as the Schedule FA *Initial value* and the capital-gains cost basis. Without it, those
+     lots would otherwise show an Initial value of 0.
 5. Click **Calculate**, review the tabbed schedules, and **download** the Excel workbook or JSON.
 
 ## Deployment

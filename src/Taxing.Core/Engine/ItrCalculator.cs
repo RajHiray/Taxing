@@ -94,11 +94,21 @@ public sealed class ItrCalculator
             DateOnly? firstAcqDate = vests.Count > 0 ? vests.Min(t => t.Date) : null;
 
             decimal initialValueInr = 0m;
+            var vestsMissingPrice = false;
             foreach (var v in vests)
             {
                 var rate = _fx.GetRate(currency, v.Date);
-                initialValueInr += v.Quantity * EffectiveVestPrice(v) * rate;
+                var price = EffectiveVestPrice(v);
+                if (price <= 0 && v.Quantity > 0) vestsMissingPrice = true;
+                initialValueInr += v.Quantity * price * rate;
             }
+
+            if (vestsMissingPrice)
+                warnings.Add(
+                    $"A3[{symbol}]: one or more vest/acquisition rows carried no price or amount, so " +
+                    "the Initial value is understated (0 for those lots). Provide the vest-day price " +
+                    $"as '{symbol},<price>' (or '{symbol},yyyy-MM-dd,<price>' per lot) under " +
+                    "acquisition/vest-day prices — for RSUs this is the fair market value on the vesting date.");
 
             // Peak value: approximate across event dates within the calendar year using
             // running share count and the price observed on each event date.
@@ -252,10 +262,32 @@ public sealed class ItrCalculator
         return rows;
     }
 
-    private static decimal EffectiveVestPrice(BrokerTransaction t)
+    /// <summary>
+    /// Per-share value of a vest/acquisition lot in foreign currency. Prefers the row's own price,
+    /// then derives it from the cash amount, and finally falls back to a user-supplied acquisition
+    /// (vest-day) FMV so RSU/ESPP share-deposit rows that carry no price still get a non-zero
+    /// Initial value and cost basis.
+    /// </summary>
+    private decimal EffectiveVestPrice(BrokerTransaction t)
     {
         if (t.PricePerShare > 0) return t.PricePerShare;
         if (t.Quantity > 0 && t.Amount > 0) return t.Amount / t.Quantity;
+        return ResolveAcquisitionPrice(t.Symbol, t.Date);
+    }
+
+    /// <summary>
+    /// Resolves a user-supplied acquisition (vest-day) price for a security, preferring a
+    /// date-specific <c>SYMBOL@yyyy-MM-dd</c> entry over a bare <c>SYMBOL</c> entry.
+    /// </summary>
+    private decimal ResolveAcquisitionPrice(string symbol, DateOnly date)
+    {
+        var prices = _options.AcquisitionPricesForeign;
+        if (prices is null || prices.Count == 0 || string.IsNullOrWhiteSpace(symbol))
+            return 0m;
+        if (prices.TryGetValue($"{symbol}@{date:yyyy-MM-dd}", out var dated) && dated > 0)
+            return dated;
+        if (prices.TryGetValue(symbol, out var bySymbol) && bySymbol > 0)
+            return bySymbol;
         return 0m;
     }
 
@@ -420,7 +452,7 @@ public sealed class ItrCalculator
             {
                 if (t.Type == TransactionType.Vest)
                 {
-                    lots.Enqueue(new Lot(t.Date, t.Quantity, t.PricePerShare));
+                    lots.Enqueue(new Lot(t.Date, t.Quantity, EffectiveVestPrice(t)));
                     continue;
                 }
 

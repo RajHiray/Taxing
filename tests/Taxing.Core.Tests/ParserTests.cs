@@ -164,6 +164,41 @@ public class ParserTests
     }
 
     [Fact]
+    public void Fidelity_LotsCsv_ToleratesHeaderVariantsAndQualifiers()
+    {
+        // Real cost-basis exports vary header wording: currency/qualifier suffixes, punctuation
+        // and alternate share/cost wording. These must still be recognized as a lots export.
+        const string csv =
+            "Symbol(s),Description,No. of Shares,Date Acquired,Cost Basis ($)\n" +
+            "MSFT,MICROSOFT CORP,4,09/02/2025,\"1,200.00\"\n";
+
+        var statement = StatementParserFactory.For(Broker.Fidelity)
+            .Parse(csv, new StatementMetadata { Currency = "USD" });
+
+        var lot = Assert.Single(statement.Transactions);
+        Assert.Equal(TransactionType.Vest, lot.Type);
+        Assert.Equal("MSFT", lot.Symbol);
+        Assert.Equal(4m, lot.Quantity);
+        Assert.Equal(300m, lot.PricePerShare); // 1200 / 4
+    }
+
+    [Fact]
+    public void Fidelity_LotsCsv_RecognizesVestDateAndFmvHeaders()
+    {
+        const string csv =
+            "Symbol,Vested Quantity,Vest Date,Vest Date FMV\n" +
+            "MSFT,3,2025-09-02,300.00\n";
+
+        var statement = StatementParserFactory.For(Broker.Fidelity)
+            .Parse(csv, new StatementMetadata { Currency = "USD" });
+
+        var lot = Assert.Single(statement.Transactions);
+        Assert.Equal(new DateOnly(2025, 9, 2), lot.Date);
+        Assert.Equal(3m, lot.Quantity);
+        Assert.Equal(300m, lot.PricePerShare);
+    }
+
+    [Fact]
     public void Factory_ExposesAllBrokers()
     {
         Assert.Equal(3, StatementParserFactory.All.Count);
