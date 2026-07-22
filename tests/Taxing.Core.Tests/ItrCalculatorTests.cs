@@ -95,6 +95,97 @@ public class ItrCalculatorTests
     }
 
     [Fact]
+    public void A3_ExcludesIncomeOnlySecurity_ButKeepsItInA2Credits()
+    {
+        // Reproduces the reported issue: a dividend/interest-only core cash-sweep fund
+        // (FID TREASURY ONLY MMKT FUND) must not appear as a standalone A3 holding, while
+        // the actually vested stock lots are all listed. The fund's dividend still counts
+        // toward the custodial account (A2) gross-credited total.
+        var fx = new InMemoryFxRateProvider();
+        fx.AddRate("USD", new DateOnly(2025, 9, 2), 88m);
+        fx.AddRate("USD", new DateOnly(2025, 12, 1), 90m);
+        fx.AddRate("USD", new DateOnly(2025, 12, 15), 90m);
+        fx.AddRate("USD", new DateOnly(2025, 12, 31), 90m);
+
+        var statement = new BrokerStatement
+        {
+            Broker = Broker.Fidelity,
+            CountryCode = "US",
+            CountryCodeItr = "2",
+            Currency = "USD",
+            Transactions = new List<BrokerTransaction>
+            {
+                new() { Date = new(2025, 9, 2), Type = TransactionType.Vest,
+                        Symbol = "MICROSOFT CORP", Quantity = 3m, PricePerShare = 300m, Amount = 900m },
+                new() { Date = new(2025, 12, 1), Type = TransactionType.Vest,
+                        Symbol = "MICROSOFT CORP", Quantity = 1m, PricePerShare = 300m, Amount = 300m },
+                new() { Date = new(2025, 12, 15), Type = TransactionType.Dividend,
+                        Symbol = "MICROSOFT CORP", Amount = 4m },
+                // Core cash-sweep money-market fund: dividend/interest only, never held as shares.
+                new() { Date = new(2025, 12, 31), Type = TransactionType.Dividend,
+                        Symbol = "FID TREASURY ONLY MMKT FUND CL OUS", Amount = 0.57m },
+            }
+        };
+
+        var options = new CalculatorOptions
+        {
+            ClosingPricesForeign = new Dictionary<string, decimal> { ["MICROSOFT CORP"] = 300m }
+        };
+        var result = new ItrCalculator(fx, options).Compute(statement, new TaxPeriod(2025));
+
+        // No A3 row for the income-only fund; only the vested-stock lots are present.
+        Assert.DoesNotContain(result.ScheduleFaA3, r => r.Symbol.Contains("MMKT"));
+        Assert.All(result.ScheduleFaA3, r => Assert.Equal("MICROSOFT CORP", r.Symbol));
+        Assert.Equal(2, result.ScheduleFaA3.Count);
+
+        // The fund's dividend is not lost: it is still credited to the account (A2).
+        var a2 = Assert.Single(result.ScheduleFaA2);
+        Assert.Equal(0.57m + 4m, a2.GrossCreditedForeign);
+        Assert.True(a2.GrossCreditedInr > 0);
+    }
+
+    [Fact]
+    public void A3_DividendGoesToLotsVestedOnOrBeforeDividendDate()
+    {
+        // A dividend must be allocated only to lots vested on/before its date, weighted by
+        // shares — it cannot belong to a lot that vested after the dividend was paid.
+        var fx = new InMemoryFxRateProvider();
+        fx.AddRate("USD", new DateOnly(2025, 3, 1), 90m);
+        fx.AddRate("USD", new DateOnly(2025, 6, 1), 90m);   // dividend date
+        fx.AddRate("USD", new DateOnly(2025, 9, 1), 90m);   // later lot
+        fx.AddRate("USD", new DateOnly(2025, 12, 31), 90m);
+
+        var statement = new BrokerStatement
+        {
+            Broker = Broker.Fidelity,
+            CountryCode = "US",
+            CountryCodeItr = "2",
+            Currency = "USD",
+            Transactions = new List<BrokerTransaction>
+            {
+                new() { Date = new(2025, 3, 1), Type = TransactionType.Vest,
+                        Symbol = "MSFT", Quantity = 2m, PricePerShare = 300m, Amount = 600m },
+                new() { Date = new(2025, 6, 1), Type = TransactionType.Dividend,
+                        Symbol = "MSFT", Amount = 9m },
+                new() { Date = new(2025, 9, 1), Type = TransactionType.Vest,
+                        Symbol = "MSFT", Quantity = 1m, PricePerShare = 300m, Amount = 300m },
+            }
+        };
+
+        var options = new CalculatorOptions
+        {
+            ClosingPricesForeign = new Dictionary<string, decimal> { ["MSFT"] = 300m }
+        };
+        var result = new ItrCalculator(fx, options).Compute(statement, new TaxPeriod(2025));
+
+        var rows = result.ScheduleFaA3.OrderBy(r => r.AcquisitionDate).ToList();
+        Assert.Equal(2, rows.Count);
+        // Entire dividend (9 * 90 = 810) belongs to the March lot; the September lot gets none.
+        Assert.Equal(810m, rows[0].GrossDividendInr);
+        Assert.Equal(0m, rows[1].GrossDividendInr);
+    }
+
+    [Fact]
     public void A3_WhenNoSymbols_AddsDiagnosticWarning()
     {
         var fx = FxFixture.UsdRates();

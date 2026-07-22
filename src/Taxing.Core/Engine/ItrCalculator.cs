@@ -82,6 +82,13 @@ public sealed class ItrCalculator
                 .OrderBy(t => t.Date)
                 .ToList();
 
+            // Skip income-only securities that were never actually held as shares (e.g. the
+            // Fidelity core cash-sweep money-market fund, which only carries dividend/interest
+            // credits). These are part of the custodial account reported in A2, not standalone
+            // A3 equity holdings, so they must not appear as their own A3 asset row.
+            if (!txns.Any(t => t.Type == TransactionType.Vest || t.Type == TransactionType.Sale))
+                continue;
+
             // Acquire-lot rows are produced date-wise from vest/reinvestment events.
             var vests = txns.Where(t => t.Type == TransactionType.Vest && t.Date <= p.CalendarYearEnd).ToList();
             DateOnly? firstAcqDate = vests.Count > 0 ? vests.Min(t => t.Date) : null;
@@ -193,6 +200,30 @@ public sealed class ItrCalculator
             }
 
             var totalLotShares = lotsByDate.Sum(g => g.Sum(v => v.Quantity));
+            var lotSharesByDate = lotsByDate.ToDictionary(g => g.Key, g => g.Sum(v => v.Quantity));
+            var lotDates = lotsByDate.Select(g => g.Key).ToList();
+            var lotDividendInr = lotDates.ToDictionary(d => d, _ => 0m);
+
+            // Allocate each calendar-year dividend only across the lots vested on/before the
+            // dividend date, weighted by shares. A dividend cannot belong to a lot that vested
+            // after it was paid, so it flows to the previously-vested holdings instead.
+            foreach (var d in txns.Where(t => t.Type == TransactionType.Dividend && p.IsInCalendarYear(t.Date)))
+            {
+                var divInr = d.Amount * _fx.GetRate(currency, d.Date);
+                var eligible = lotDates.Where(dt => dt <= d.Date).ToList();
+                var eligibleShares = eligible.Sum(dt => lotSharesByDate[dt]);
+                if (eligible.Count == 0 || eligibleShares <= 0)
+                {
+                    // No lot vested on/before the dividend (e.g. missing prior-year lots):
+                    // fall back to spreading it across all known lots.
+                    eligible = lotDates;
+                    eligibleShares = totalLotShares;
+                }
+                if (eligibleShares <= 0) continue;
+                foreach (var dt in eligible)
+                    lotDividendInr[dt] += divInr * (lotSharesByDate[dt] / eligibleShares);
+            }
+
             foreach (var lot in lotsByDate)
             {
                 var lotShares = lot.Sum(v => v.Quantity);
@@ -211,7 +242,7 @@ public sealed class ItrCalculator
                     InitialValueInr = RoundInr(lotInitialInr),
                     PeakValueInr = RoundInr(peakInr * lotWeight),
                     ClosingValueInr = RoundInr(closingInr * lotWeight),
-                    GrossDividendInr = RoundInr(grossDivInr * lotWeight),
+                    GrossDividendInr = RoundInr(lotDividendInr[lot.Key]),
                     ProceedsInr = RoundInr(proceedsInr * lotWeight),
                     ClosingShares = closingShares * lotWeight
                 });
@@ -251,7 +282,14 @@ public sealed class ItrCalculator
             ? s.ClosingCashBalance * _fx.GetRate(currency, p.CalendarYearEnd)
             : 0m;
 
-        var grossCreditedInr = a3.Sum(r => r.GrossDividendInr + r.ProceedsInr);
+        // Gross credited to the account: all dividends (incl. income-only funds excluded from
+        // A3, e.g. the core cash-sweep money-market fund) and sale proceeds within the calendar
+        // year, valued at the FA basis (TTBR on the credit date). Kept consistent with the
+        // foreign-currency total below so both cover the same set of credits.
+        var grossCreditedInr = s.Transactions
+            .Where(t => p.IsInCalendarYear(t.Date) &&
+                        (t.Type == TransactionType.Dividend || t.Type == TransactionType.Sale))
+            .Sum(t => t.Amount * _fx.GetRate(currency, t.Date));
         var grossCreditedForeign = s.Transactions
             .Where(t => p.IsInCalendarYear(t.Date) &&
                         (t.Type == TransactionType.Dividend || t.Type == TransactionType.Sale))
