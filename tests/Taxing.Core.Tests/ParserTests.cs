@@ -111,6 +111,46 @@ public class ParserTests
     }
 
     [Fact]
+    public void Fidelity_LotsCsv_ParsesEachLotAsVestWithCostBasis()
+    {
+        // A cost-basis / tax-lot export (no Action or cash Amount column) should still be
+        // understood: each row is a held lot with an acquisition date, quantity and cost basis.
+        const string csv =
+            "Symbol,Description,Quantity,Date Acquired,Cost Basis Per Share,Cost Basis\n" +
+            "MSFT,MICROSOFT CORP,3,09/02/2025,300.00,900.00\n" +
+            "MSFT,MICROSOFT CORP,1,12/01/2025,310.00,310.00\n";
+
+        var statement = StatementParserFactory.For(Broker.Fidelity)
+            .Parse(csv, new StatementMetadata { Currency = "USD" });
+
+        Assert.Equal(2, statement.Transactions.Count);
+        Assert.All(statement.Transactions, t => Assert.Equal(TransactionType.Vest, t.Type));
+        var first = statement.Transactions[0];
+        Assert.Equal(new DateOnly(2025, 9, 2), first.Date);
+        Assert.Equal("MSFT", first.Symbol);
+        Assert.Equal(3m, first.Quantity);
+        Assert.Equal(300m, first.PricePerShare);
+    }
+
+    [Fact]
+    public void Fidelity_LotsCsv_DerivesPerShareFromTotalCost()
+    {
+        // When only a total cost basis is present, the per-share acquisition price is derived
+        // from it so Schedule FA A3 initial values are non-zero.
+        const string csv =
+            "Symbol,Quantity,Acquisition Date,Cost Basis\n" +
+            "MSFT,4,2025-09-02,1200.00\n";
+
+        var statement = StatementParserFactory.For(Broker.Fidelity)
+            .Parse(csv, new StatementMetadata { Currency = "USD" });
+
+        var lot = Assert.Single(statement.Transactions);
+        Assert.Equal(TransactionType.Vest, lot.Type);
+        Assert.Equal(4m, lot.Quantity);
+        Assert.Equal(300m, lot.PricePerShare); // 1200 / 4
+    }
+
+    [Fact]
     public void Fidelity_SymbolInAlternateHeader_IsRecognized()
     {
         const string csv =

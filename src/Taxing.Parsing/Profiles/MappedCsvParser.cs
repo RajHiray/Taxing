@@ -36,7 +36,25 @@ public sealed class ColumnMap
 
     /// <summary>Accepted date formats for parsing (invariant culture).</summary>
     public string[] DateFormats { get; init; } =
-        { "MM/dd/yyyy", "M/d/yyyy", "yyyy-MM-dd", "dd-MMM-yyyy", "MMM dd, yyyy" };
+        { "MM/dd/yyyy", "M/d/yyyy", "yyyy-MM-dd", "dd-MMM-yyyy", "MMM dd, yyyy", "MMM-dd-yyyy" };
+
+    /// <summary>
+    /// Candidate header names for a lot acquisition-date column, used when the upload is a
+    /// cost-basis / tax-lot export (one row per held lot) rather than a transaction history.
+    /// </summary>
+    public string[] LotAcquiredHeaders { get; init; } =
+        { "Date Acquired", "Acquired", "Acquisition Date", "Date of Acquisition", "Acquired Date",
+          "Open Date", "Purchase Date", "Acquired Date/Lot" };
+
+    /// <summary>Candidate header names for a lot's per-share cost basis.</summary>
+    public string[] LotCostPerShareHeaders { get; init; } =
+        { "Cost Basis Per Share", "Cost Per Share", "Cost/Share", "Cost basis/share", "Unit Cost",
+          "Average Cost Basis", "Acquisition Price", "Price Per Share", "Acquisition Cost Per Share" };
+
+    /// <summary>Candidate header names for a lot's total cost basis.</summary>
+    public string[] LotTotalCostHeaders { get; init; } =
+        { "Cost Basis", "Total Cost Basis", "Adjusted Cost Basis", "Cost Basis Total", "Total Cost",
+          "Acquisition Cost", "Cost" };
 
     /// <summary>
     /// Maps a broker action string to a canonical <see cref="TransactionType"/>.
@@ -77,10 +95,19 @@ public abstract class MappedCsvParser : IStatementParser
         }
 
         if (idx is null)
+        {
+            // Not a transaction-history export. Try a cost-basis / tax-lot export (one row per
+            // held lot), which lets users who can only download "lots" (not full transaction
+            // history) still generate per-security Schedule FA A3 rows with real cost basis.
+            var lotTxns = TryParseLots(rows);
+            if (lotTxns is not null)
+                return BuildStatement(meta, lotTxns);
+
             throw new FormatException(
                 $"Could not locate the expected columns for {DisplayName}. " +
-                "Please confirm you selected the correct broker and exported the transaction history.");
-
+                "Please confirm you selected the correct broker and exported the transaction " +
+                "history or a cost-basis (tax lots) CSV.");
+        }
         var (dateI, actionI, symbolI, qtyI, priceI, amountI, descI) =
             (idx[0], idx[1], idx[2], idx[3], idx[4], idx[5], idx[6]);
 
@@ -121,7 +148,11 @@ public abstract class MappedCsvParser : IStatementParser
             });
         }
 
-        return new BrokerStatement
+        return BuildStatement(meta, txns);
+    }
+
+    private BrokerStatement BuildStatement(StatementMetadata meta, List<BrokerTransaction> txns) =>
+        new()
         {
             Broker = Broker,
             InstitutionName = string.IsNullOrWhiteSpace(meta.InstitutionName)
@@ -135,6 +166,88 @@ public abstract class MappedCsvParser : IStatementParser
             ClosingCashBalance = meta.ClosingCashBalance,
             Transactions = txns
         };
+
+    /// <summary>
+    /// Attempts to interpret the rows as a cost-basis / tax-lot export where each row is a held
+    /// lot (symbol, acquisition date, quantity, cost basis). Returns one <see cref="TransactionType.Vest"/>
+    /// transaction per lot, with the per-share cost basis as the acquisition price so Schedule FA
+    /// A3 initial values are non-zero. Returns null when the rows are not a recognizable lots export.
+    /// </summary>
+    private List<BrokerTransaction>? TryParseLots(IReadOnlyList<string[]> rows)
+    {
+        int headerIndex = -1;
+        int acquiredI = -1, qtyI = -1, symbolI = -1, descI = -1, costPerShareI = -1, totalCostI = -1;
+
+        for (int r = 0; r < rows.Count; r++)
+        {
+            int Find(string[] names)
+            {
+                for (int i = 0; i < rows[r].Length; i++)
+                {
+                    var h = rows[r][i].Trim();
+                    foreach (var n in names)
+                        if (h.Equals(n, StringComparison.OrdinalIgnoreCase))
+                            return i;
+                }
+                return -1;
+            }
+
+            var a = Find(Map.LotAcquiredHeaders);
+            var q = Find(Map.QuantityHeaders);
+            var cps = Find(Map.LotCostPerShareHeaders);
+            var tc = Find(Map.LotTotalCostHeaders);
+
+            // A lots export must identify an acquisition date, a quantity, and some cost basis.
+            if (a >= 0 && q >= 0 && (cps >= 0 || tc >= 0))
+            {
+                headerIndex = r;
+                acquiredI = a; qtyI = q; costPerShareI = cps; totalCostI = tc;
+                symbolI = Find(Map.SymbolHeaders);
+                descI = Find(Map.DescriptionHeaders);
+                break;
+            }
+        }
+
+        if (headerIndex < 0) return null;
+
+        var txns = new List<BrokerTransaction>();
+        for (int r = headerIndex + 1; r < rows.Count; r++)
+        {
+            var cols = rows[r];
+            if (cols.Length == 0 || cols.All(string.IsNullOrWhiteSpace)) continue;
+
+            if (!TryParseDate(Get(cols, acquiredI), out var date)) continue;
+
+            var quantity = Math.Abs(ParseDecimal(Get(cols, qtyI)));
+            if (quantity <= 0) continue;
+
+            var perShare = Math.Abs(ParseDecimal(Get(cols, costPerShareI)));
+            var totalCost = Math.Abs(ParseDecimal(Get(cols, totalCostI)));
+            // Prefer explicit per-share cost; otherwise derive it from total cost basis / quantity.
+            if (perShare <= 0 && totalCost > 0)
+                perShare = totalCost / quantity;
+            if (totalCost <= 0 && perShare > 0)
+                totalCost = perShare * quantity;
+
+            var symbol = Get(cols, symbolI).Trim().ToUpperInvariant();
+            var description = Get(cols, descI).Trim();
+            if (symbol.Length == 0)
+                symbol = NormalizeDescriptionSymbol(description);
+            if (symbol.Length == 0) continue; // cannot build a holding without an identity
+
+            txns.Add(new BrokerTransaction
+            {
+                Date = date,
+                Type = TransactionType.Vest,
+                Symbol = symbol,
+                Quantity = quantity,
+                PricePerShare = perShare,
+                Amount = totalCost,
+                Note = description.Length > 0 ? description : "Tax lot"
+            });
+        }
+
+        return txns.Count > 0 ? txns : null;
     }
 
     private int[]? ResolveColumns(string[] header)

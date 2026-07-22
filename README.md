@@ -63,7 +63,9 @@ Then open the printed `http://localhost:<port>` URL.
    does not contain them).
 3. Upload the broker **statement CSV** — Fidelity's **transaction history export** from
    *Accounts &amp; Trade → Portfolio → Activity &amp; Orders → Download (CSV)*, covering the period
-   you are filing.
+   you are filing. Alternatively, upload a **cost-basis / tax-lots CSV** (one row per held lot,
+   with columns like `Symbol, Quantity, Date Acquired, Cost Basis`) — each lot is treated as an
+   acquisition with its cost basis so every holding and its Initial value are produced.
 4. Provide **SBI TTBR rates** — the State Bank of India **Telegraphic Transfer Buying Rate**
    (month-end values, from a public SBI rate source; a sample set is bundled — replace with official
    rates) and the **31 December price** per symbol.
