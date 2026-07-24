@@ -147,11 +147,21 @@
                     vary slightly — the parser recognises common variants automatically.
                 </p>
                 <p class="mb-0">
-                    <strong>Can't download full transaction history?</strong> You can instead upload a
-                    <strong>cost-basis / tax-lots CSV</strong> (one row per held lot). Any export with
-                    columns like <code>Symbol, Quantity, Date Acquired, Cost Basis</code> works — each
-                    lot becomes an acquisition with its cost basis, so every holding row and its
-                    Initial value are generated.
+                    <strong>Can't download full transaction history?</strong> (Fidelity's activity
+                    export is often limited to a shorter window, while your RSUs may have vested over
+                    several years.) You can instead upload a <strong>cost-basis / tax-lots CSV</strong>
+                    — one row per <em>held</em> lot, covering <strong>all</strong> lots to date. On
+                    Fidelity: <em>Accounts &amp; Trade → Portfolio → Positions → Cost Basis</em>
+                    (Unrealized Gain/Loss), then <strong>Download</strong>. Any export with columns
+                    like <code>Symbol, Description, Quantity, Date Acquired, Cost Basis</code> works —
+                    each lot becomes an acquisition with its cost basis, so every holding row and its
+                    Initial value are generated automatically (no manual price entry needed).
+                </p>
+                <p class="mb-0 mt-1">
+                    Not sure of the exact columns? <a href="data/sample-cost-basis-lots.csv" download>
+                    Download a sample lots CSV</a> and match your file's header row to it (rename
+                    columns if needed). If an upload isn't recognised, the error message lists the
+                    columns it detected so you can compare.
                 </p>
             </div>
         </details>
@@ -216,16 +226,18 @@
             </div>
             <div class="col-md-12">
                 <label class="form-label">
-                    Acquisition / vest-day prices (@_currency) — <code>SYMBOL,price</code> or
-                    <code>SYMBOL,yyyy-MM-dd,price</code> per line
+                    Acquisition / vest-day prices (@_currency) — <em>optional</em> —
+                    <code>SYMBOL,price</code> or <code>SYMBOL,yyyy-MM-dd,price</code> per line
                 </label>
                 <textarea class="form-control font-monospace" rows="4" @bind="_acquisitionPricesText"
                           placeholder="MSFT,250.00&#10;MSFT,2023-04-20,290.00"></textarea>
                 <small class="d-block text-muted mt-1">
-                    Only needed when your export lists RSU/ESPP vests as share deposits with no price
-                    or amount. For RSUs this is the <strong>fair market value on the vesting date</strong>,
-                    which becomes the Schedule FA Initial value and the capital-gains cost basis. Use the
-                    date-specific form to price each lot exactly.
+                    <strong>Leave this blank if your file already has cost basis.</strong> A
+                    cost-basis / tax-lots CSV carries each lot's price, so it is used directly and
+                    nothing is needed here. This box is only a fallback for a transaction export that
+                    lists RSU/ESPP vests as bare share deposits with <em>no</em> price or amount. For
+                    RSUs the value is the <strong>fair market value on the vesting date</strong>,
+                    which becomes the Schedule FA Initial value and the capital-gains cost basis.
                 </small>
             </div>
         </div>

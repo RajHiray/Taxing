@@ -115,6 +115,17 @@ public abstract class MappedCsvParser : IStatementParser
             if (lotTxns is not null)
                 return BuildStatement(meta, lotTxns);
 
+            // A common near-miss: a Positions/Holdings summary that has a security, a quantity and a
+            // cost basis but no per-lot acquisition-date column. Point the user at the right export.
+            if (LooksLikePositionsWithoutAcquisitionDate(rows))
+                throw new FormatException(
+                    $"This looks like a {DisplayName} positions/holdings summary: it has a security, " +
+                    "quantity and cost basis, but no per-lot acquisition-date column (e.g. " +
+                    "'Date Acquired' / 'Vest Date'). Schedule FA needs each lot's acquisition date, " +
+                    "so please download the cost-basis view showing individual lots (Positions → " +
+                    "Cost Basis → Unrealized Gain/Loss). " +
+                    DescribeDetectedColumns(rows));
+
             throw new FormatException(
                 $"Could not locate the expected columns for {DisplayName}. " +
                 "Please confirm you selected the correct broker and exported the transaction " +
@@ -288,6 +299,35 @@ public abstract class MappedCsvParser : IStatementParser
 
     private static string Get(string[] cols, int i) =>
         i >= 0 && i < cols.Length ? cols[i] : string.Empty;
+
+    /// <summary>
+    /// True when some row looks like a positions/holdings summary header — a quantity column and a
+    /// cost-basis column alongside a security (symbol or description) — but there is no per-lot
+    /// acquisition-date column. Such files identify holdings but omit the acquisition dates that
+    /// Schedule FA requires, so we can detect and explain the mismatch precisely.
+    /// </summary>
+    private bool LooksLikePositionsWithoutAcquisitionDate(IReadOnlyList<string[]> rows)
+    {
+        foreach (var row in rows)
+        {
+            int Find(string[] names)
+            {
+                for (int i = 0; i < row.Length; i++)
+                    if (HeaderMatches(row[i], names))
+                        return i;
+                return -1;
+            }
+
+            var q = Find(Map.LotQuantityHeaders);
+            var cost = Find(Map.LotCostPerShareHeaders) >= 0 || Find(Map.LotTotalCostHeaders) >= 0;
+            var security = Find(Map.SymbolHeaders) >= 0 || Find(Map.DescriptionHeaders) >= 0;
+            var acquired = Find(Map.LotAcquiredHeaders);
+
+            if (q >= 0 && cost && security && acquired < 0)
+                return true;
+        }
+        return false;
+    }
 
     /// <summary>
     /// Builds a short, diagnosable hint listing the column names we actually saw in the upload so

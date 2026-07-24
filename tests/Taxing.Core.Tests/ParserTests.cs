@@ -238,6 +238,23 @@ public class ParserTests
     }
 
     [Fact]
+    public void Fidelity_PositionsSummaryWithoutAcquisitionDate_GivesTargetedError()
+    {
+        // A Positions/Holdings summary has security + quantity + cost basis but no per-lot
+        // acquisition date. The error should say so and point at the cost-basis lots view.
+        const string csv =
+            "Symbol,Description,Quantity,Cost Basis,Current Value\n" +
+            "MSFT,MICROSOFT CORP,31,10270.00,12000.00\n";
+
+        var ex = Assert.Throws<FormatException>(() => StatementParserFactory.For(Broker.Fidelity)
+            .Parse(csv, new StatementMetadata { Currency = "USD" }));
+
+        Assert.Contains("positions/holdings summary", ex.Message);
+        Assert.Contains("acquisition-date", ex.Message);
+        Assert.Contains("Columns detected in your file:", ex.Message);
+    }
+
+    [Fact]
     public void Factory_ExposesAllBrokers()
     {
         Assert.Equal(3, StatementParserFactory.All.Count);
