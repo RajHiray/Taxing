@@ -232,6 +232,24 @@ public abstract class MappedCsvParser : IStatementParser
             }
         }
 
+        if (headerIndex < 0)
+        {
+            // Fallback: no header matched the exact candidate lists. Classify columns by keyword
+            // so real-world wording we didn't enumerate (e.g. "Acquired On", "Shares Vested",
+            // "Ticker Symbol", "Total Cost Basis Amount") is still recognized as a lots export.
+            for (int r = 0; r < rows.Count; r++)
+            {
+                var c = ClassifyLotColumns(rows[r]);
+                if (c is not null)
+                {
+                    headerIndex = r;
+                    (acquiredI, qtyI, symbolI, descI, costPerShareI, totalCostI) =
+                        (c[0], c[1], c[2], c[3], c[4], c[5]);
+                    break;
+                }
+            }
+        }
+
         if (headerIndex < 0) return null;
 
         var txns = new List<BrokerTransaction>();
@@ -272,6 +290,59 @@ public abstract class MappedCsvParser : IStatementParser
         }
 
         return txns.Count > 0 ? txns : null;
+    }
+
+    /// <summary>
+    /// Keyword-based fallback for recognizing a cost-basis / tax-lot header row when the exact
+    /// candidate lists don't match. Classifies each column by the words it contains (rather than an
+    /// exact name), so real-world header wording is tolerated. Returns
+    /// { acquired, quantity, symbol, description, costPerShare, totalCost } column indices, or null
+    /// when it cannot find at least an acquisition date, a quantity and a security identity.
+    /// </summary>
+    private static int[]? ClassifyLotColumns(string[] header)
+    {
+        int acquired = -1, quantity = -1, symbol = -1, description = -1, perShare = -1, total = -1;
+
+        for (int i = 0; i < header.Length; i++)
+        {
+            var tokens = NormalizeHeader(header[i])
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (tokens.Length == 0) continue;
+
+            bool Has(params string[] words) => words.Any(w => tokens.Contains(w));
+
+            var disposal = Has("sold", "sale", "sell", "disposed", "disposition", "closed", "proceeds");
+            var money = Has("cost", "basis", "price", "fmv", "value", "amount", "proceeds");
+            var dateWord = Has("date");
+            var acquiredWord = Has("acquired", "acquisition", "vest", "vested", "grant",
+                "purchase", "purchased", "open", "opened", "lot");
+
+            // Security ticker/symbol takes precedence over every other classification.
+            if (symbol < 0 && Has("symbol", "ticker", "cusip")) { symbol = i; continue; }
+
+            // Per-share money column (checked before total cost so "Cost Basis Per Share" wins).
+            if (perShare < 0 && (Has("cost", "price", "fmv") && Has("share", "unit"))) { perShare = i; continue; }
+            if (perShare < 0 && (Has("fmv", "price") && Has("per"))) { perShare = i; continue; }
+
+            // Total cost / cost basis column.
+            if (total < 0 && Has("cost", "basis")) { total = i; continue; }
+
+            // Quantity of shares (exclude disposal-quantity columns on realized G/L exports).
+            if (quantity < 0 && Has("quantity", "shares", "qty") && !disposal) { quantity = i; continue; }
+
+            // Acquisition date: an acquisition-tied column, never a disposal or money column. A
+            // "date" word is not required when the column is explicitly named acquired/acquisition.
+            if (acquired < 0 && !disposal && !money &&
+                (Has("acquired", "acquisition") || (dateWord && acquiredWord)))
+            { acquired = i; continue; }
+
+            if (description < 0 && Has("description", "security", "investment", "fund", "name"))
+                description = i;
+        }
+
+        if (acquired >= 0 && quantity >= 0 && (symbol >= 0 || description >= 0))
+            return new[] { acquired, quantity, symbol, description, perShare, total };
+        return null;
     }
 
     private int[]? ResolveColumns(string[] header)

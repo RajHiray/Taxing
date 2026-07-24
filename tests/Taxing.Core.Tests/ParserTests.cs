@@ -13,6 +13,79 @@ public class ParserTests
         "07/20/2023,YOU SOLD,MSFT,4,300.00,1200.00\n";
 
     [Fact]
+    public void Fidelity_LotsCsv_SemicolonDelimited_IsParsed()
+    {
+        // Spreadsheet apps in non-US locales re-save CSVs with a ';' delimiter. Such a file must
+        // still be read (previously it collapsed into one column and failed column detection).
+        const string csv =
+            "Symbol;Description;Quantity;Date Acquired;Cost Basis\n" +
+            "MSFT;MICROSOFT CORP;4;09/02/2025;1200.00\n";
+
+        var statement = StatementParserFactory.For(Broker.Fidelity)
+            .Parse(csv, new StatementMetadata { Currency = "USD" });
+
+        var lot = Assert.Single(statement.Transactions);
+        Assert.Equal(TransactionType.Vest, lot.Type);
+        Assert.Equal("MSFT", lot.Symbol);
+        Assert.Equal(4m, lot.Quantity);
+        Assert.Equal(300m, lot.PricePerShare); // 1200 / 4
+    }
+
+    [Fact]
+    public void Fidelity_LotsCsv_TabDelimited_IsParsed()
+    {
+        const string csv =
+            "Symbol\tDescription\tQuantity\tDate Acquired\tCost Basis\n" +
+            "MSFT\tMICROSOFT CORP\t4\t09/02/2025\t1200.00\n";
+
+        var statement = StatementParserFactory.For(Broker.Fidelity)
+            .Parse(csv, new StatementMetadata { Currency = "USD" });
+
+        var lot = Assert.Single(statement.Transactions);
+        Assert.Equal("MSFT", lot.Symbol);
+        Assert.Equal(4m, lot.Quantity);
+        Assert.Equal(300m, lot.PricePerShare);
+    }
+
+    [Fact]
+    public void Fidelity_LotsCsv_KeywordFallbackRecognizesUnlistedHeaders()
+    {
+        // Header wording not present in any exact candidate list must still be recognized by the
+        // keyword classifier: "Ticker Symbol", "Shares Vested", "Acquired On", "Total Cost Basis Amount".
+        const string csv =
+            "Ticker Symbol,Company,Shares Vested,Acquired On,Total Cost Basis Amount\n" +
+            "MSFT,MICROSOFT CORP,4,09/02/2025,1200.00\n";
+
+        var statement = StatementParserFactory.For(Broker.Fidelity)
+            .Parse(csv, new StatementMetadata { Currency = "USD" });
+
+        var lot = Assert.Single(statement.Transactions);
+        Assert.Equal(TransactionType.Vest, lot.Type);
+        Assert.Equal("MSFT", lot.Symbol);
+        Assert.Equal(new DateOnly(2025, 9, 2), lot.Date);
+        Assert.Equal(4m, lot.Quantity);
+        Assert.Equal(300m, lot.PricePerShare); // 1200 / 4
+    }
+
+    [Fact]
+    public void Fidelity_LotsCsv_KeywordFallbackIgnoresDisposalColumns()
+    {
+        // A realized gain/loss export carries both acquisition and disposal columns. The lot must be
+        // built from the acquisition date and held quantity, never the "Date Sold"/"Quantity Sold".
+        const string csv =
+            "Ticker,Number of Shares,Acquisition Date,Date Sold,Cost Basis Per Share\n" +
+            "MSFT,4,09/02/2025,10/10/2025,300.00\n";
+
+        var statement = StatementParserFactory.For(Broker.Fidelity)
+            .Parse(csv, new StatementMetadata { Currency = "USD" });
+
+        var lot = Assert.Single(statement.Transactions);
+        Assert.Equal(new DateOnly(2025, 9, 2), lot.Date);
+        Assert.Equal(4m, lot.Quantity);
+        Assert.Equal(300m, lot.PricePerShare);
+    }
+
+    [Fact]
     public void Fidelity_ParsesAllRelevantRows()
     {
         var parser = StatementParserFactory.For(Broker.Fidelity);
